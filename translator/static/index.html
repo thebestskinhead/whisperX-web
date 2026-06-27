@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>英译中翻译</title>
+  <style>
+    :root { --primary: #2563eb; --bg: #f8fafc; --card: #fff; --text: #1e293b; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; }
+    .subtitle { color: #64748b; margin-bottom: 24px; }
+    .card { background: var(--card); border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 20px; }
+    label { font-weight: 600; font-size: 14px; display: block; margin-bottom: 8px; }
+    textarea { width: 100%; min-height: 120px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; resize: vertical; }
+    button { background: var(--primary); color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; margin-top: 16px; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .info { font-size: 13px; color: #64748b; margin-top: 12px; }
+    .error { color: #dc2626; background: #fef2f2; padding: 12px; border-radius: 8px; margin-top: 16px; }
+    .success { color: #15803d; background: #f0fdf4; padding: 12px; border-radius: 8px; margin-top: 16px; }
+    pre { background: #f1f5f9; padding: 16px; border-radius: 8px; overflow-x: auto; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>英译中翻译</h1>
+    <div class="subtitle">输入英文文本，调用 /api/translate 获取中文翻译</div>
+
+    <div class="card">
+      <label for="sourceText">英文原文</label>
+      <textarea id="sourceText" placeholder="请输入英文..."></textarea>
+      <button id="submitBtn">翻译</button>
+      <div id="progress" style="display:none; margin-top:12px; color:#2563eb;">翻译中，请稍候...</div>
+      <div id="message"></div>
+    </div>
+
+    <div class="card" id="resultCard" style="display:none;">
+      <h3>中文翻译</h3>
+      <pre id="translatedText"></pre>
+      <div class="info" id="meta"></div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+      const text = document.getElementById('sourceText').value.trim();
+      if (!text) {
+        alert('请输入英文文本');
+        return;
+      }
+      const btn = document.getElementById('submitBtn');
+      const progress = document.getElementById('progress');
+      const msg = document.getElementById('message');
+      const resultCard = document.getElementById('resultCard');
+      btn.disabled = true;
+      progress.style.display = 'block';
+      msg.innerHTML = '';
+      resultCard.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || '翻译失败');
+        document.getElementById('translatedText').textContent = data.translated_text;
+        document.getElementById('meta').textContent = `模型：${data.model} | 设备：${data.device} | 耗时：${data.elapsed_time} 秒`;
+        resultCard.style.display = 'block';
+        msg.innerHTML = '<div class="success">翻译完成</div>';
+      } catch (e) {
+        msg.innerHTML = `<div class="error">错误：${e.message}</div>`;
+      } finally {
+        btn.disabled = false;
+        progress.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>

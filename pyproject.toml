@@ -28,6 +28,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
+web = ["fastapi>=0.115.0", "uvicorn[standard]>=0.34.0", "python-multipart>=0.0.20", "python-dotenv>=1.0.0"]
+translate = ["sentencepiece>=0.2.0", "sacremoses>=0.1.0"]
 
 [project.scripts]
 whisperx = "whisperx.__main__:cli"

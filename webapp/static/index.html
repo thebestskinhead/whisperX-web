@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhisperX 语音转写</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-light: #e0e7ff;
+      --bg: #f3f4f6;
+      --surface: #ffffff;
+      --text: #1f2937;
+      --text-secondary: #6b7280;
+      --border: #e5e7eb;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --speaker-colors: #4f46e5, #059669, #d97706, #dc2626, #7c3aed, #db2777;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ===== 顶部控制栏 ===== */
+    .top-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      box-shadow: var(--shadow);
+      z-index: 10;
+    }
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo svg { width: 24px; height: 24px; }
+    .controls { display: flex; align-items: center; gap: 12px; flex: 1; flex-wrap: wrap; }
+    .controls select, .controls input[type="text"] {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .controls select:focus, .controls input:focus { border-color: var(--primary); }
+    .controls input[type="file"] { font-size: 13px; }
+    .controls label { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .controls input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+    .btn {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:hover { opacity: 0.9; }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { background: #9ca3af; cursor: not-allowed; }
+    .btn-secondary {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .gpu-badge {
+      font-size: 12px;
+      color: var(--text-secondary);
+      background: #f3f4f6;
+      padding: 4px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+
+    /* ===== 主内容区 ===== */
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* 左侧转录结果 */
+    .transcript-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 32px;
+      padding-bottom: 140px; /* 给底部播放器留空间 */
+    }
+    .empty-state {
+      text-align: center;
+      color: var(--text-secondary);
+      margin-top: 80px;
+    }
+    .empty-state svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.3; }
+
+    /* 时间线 */
+    .timeline { display: flex; flex-direction: column; gap: 4px; }
+    .segment {
+      display: flex;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.15s;
+      position: relative;
+      align-items: flex-start;
+    }
+    .segment:hover { background: rgba(79, 70, 229, 0.04); }
+    .segment.active {
+      background: var(--primary-light);
+      box-shadow: inset 3px 0 0 var(--primary);
+    }
+    .segment-time {
+      font-size: 12px;
+      color: var(--text-secondary);
+      font-variant-numeric: tabular-nums;
+      min-width: 56px;
+      padding-top: 2px;
+      user-select: none;
+    }
+    .segment-body { flex: 1; }
+    .segment-text {
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+    .segment-trans {
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      padding-left: 8px;
+      border-left: 2px solid var(--border);
+    }
+    .segment-speaker {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .speaker-avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .speaker-name { text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* 右侧边栏 */
+    .sidebar {
+      width: 280px;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .sidebar-section h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .tip-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .tip-list li {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      padding-left: 18px;
+      position: relative;
+    }
+    .tip-list li::before {
+      content: attr(data-num);
+      position: absolute;
+      left: 0;
+      top: 0;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .export-btn {
+      width: 100%;
+      justify-content: flex-start;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--border);
+      font-weight: 500;
+    }
+    .export-btn:hover { background: #f9fafb; }
+    .export-btn svg { width: 18px; height: 18px; color: var(--text-secondary); }
+
+    /* ===== 底部播放器 ===== */
+    .player-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 -4px 6px -1px rgba(0,0,0,0.05);
+      z-index: 20;
+    }
+    .play-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.1s;
+    }
+    .play-btn:active { transform: scale(0.95); }
+    .play-btn svg { width: 20px; height: 20px; fill: currentColor; }
+    .player-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .player-title {
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .player-time {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+    .progress-wrap {
+      flex: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 120px;
+    }
+    .progress-track {
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      position: relative;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 3px;
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+    .progress-hover {
+      position: absolute;
+      top: -24px;
+      transform: translateX(-50%);
+      background: #1f2937;
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .progress-track:hover .progress-hover { opacity: 1; }
+
+    /* 状态提示 */
+    .status-toast {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1f2937;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .status-toast.show { opacity: 1; }
+    .status-toast.error { background: #dc2626; }
+    .status-toast.success { background: #059669; }
+
+    /* 加载动画 */
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 响应式 */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .transcript-panel { padding: 16px; }
+      .top-bar { padding: 12px 16px; }
+      .controls { gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部控制栏 -->
+  <div class="top-bar">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+      </svg>
+      WhisperX 语音转写
+    </div>
+    <div class="controls">
+      <select id="modelKey">
+        <option value="auto">自动选择模型</option>
+      </select>
+      <select id="language">
+        <option value="">自动检测语言</option>
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+        <option value="ja">日本語</option>
+        <option value="de">Deutsch</option>
+        <option value="fr">Français</option>
+      </select>
+      <label><input type="checkbox" id="translate" checked /> 翻译</label>
+      <label><input type="checkbox" id="diarize" /> 说话人分离</label>
+      <input type="file" id="audioFile" accept="audio/*" />
+      <input type="text" id="audioUrl" placeholder="或粘贴音频链接" style="min-width:180px;" />
+      <button class="btn" id="submitBtn">
+        <span id="btnText">开始转录</span>
+      </button>
+      <span class="gpu-badge" id="gpuInfo">检测中…</span>
+    </div>
+  </div>
+
+  <!-- 主内容 -->
+  <div class="main">
+    <div class="transcript-panel" id="transcriptPanel">
+      <div class="empty-state" id="emptyState">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 18.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13Z"/>
+          <path d="M12 8v4l2.5 1.5"/>
+        </svg>
+        <p>请上传音频文件或粘贴链接开始转录</p>
+        <p style="font-size:13px; margin-top:8px; opacity:0.7">支持 MP3 / WAV / M4A / FLAC 等格式</p>
+      </div>
+      <div class="timeline" id="timeline" style="display:none;"></div>
+    </div>
+
+    <!-- 右侧边栏 -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h3>使用提示</h3>
+        <ol class="tip-list">
+          <li data-num="1">首次加载模型需要几分钟，请耐心等待加载进度</li>
+          <li data-num="2">处理过程中请勿关闭页面，否则任务将中断</li>
+          <li data-num="3">点击任意转录句子可跳转音频至对应位置</li>
+          <li data-num="4">开启说话人分离需在环境变量中配置 HF_TOKEN</li>
+        </ol>
+      </div>
+      <div class="sidebar-section" id="exportSection" style="opacity:0.4; pointer-events:none;">
+        <h3>导出</h3>
+        <button class="btn btn-secondary export-btn" id="btnCopy">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          复制转录文本
+        </button>
+        <button class="btn btn-secondary export-btn" id="btnTxt">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          下载 TXT
+        </button>
+        <button class="btn btn-secondary export-btn" id="btnSrt">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载 SRT
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 底部播放器 -->
+  <div class="player-bar" id="playerBar" style="display:none;">
+    <button class="play-btn" id="playBtn">
+      <svg id="iconPlay" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <svg id="iconPause" viewBox="0 0 24 24" style="display:none;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+    </button>
+    <div class="player-info">
+      <div class="player-title" id="playerTitle">未选择音频</div>
+      <div class="player-time"><span id="currentTime">00:00</span> / <span id="totalTime">00:00</span></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-track" id="progressTrack">
+        <div class="progress-fill" id="progressFill"></div>
+        <div class="progress-hover" id="progressHover">00:00</div>
+      </div>
+    </div>
+    <audio id="audio" preload="metadata"></audio>
+  </div>
+
+  <!-- 状态提示 -->
+  <div class="status-toast" id="toast"></div>
+
+  <script>
+    // ===== 工具函数 =====
+    const $ = id => document.getElementById(id);
+    const fmtTime = s => {
+      if (!isFinite(s)) return '00:00';
+      const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+      return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    };
+    const fmtTimeFull = s => {
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+      if (h > 0) return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+      return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    };
+    const showToast = (msg, type='') => {
+      const t = $('toast');
+      t.textContent = msg;
+      t.className = 'status-toast ' + type + ' show';
+      setTimeout(() => t.classList.remove('show'), 3000);
+    };
+
+    // 说话人颜色映射
+    const speakerColors = {};
+    const colorPalette = ['#4f46e5','#059669','#d97706','#dc2626','#7c3aed','#db2777','#0891b2','#65a30d'];
+    let colorIdx = 0;
+    function getSpeakerColor(speaker) {
+      if (!speakerColors[speaker]) {
+        speakerColors[speaker] = colorPalette[colorIdx % colorPalette.length];
+        colorIdx++;
+      }
+      return speakerColors[speaker];
+    }
+
+    // ===== 状态 =====
+    let currentSegments = [];
+    let currentFile = null;
+    let isPlaying = false;
+
+    // ===== 加载模型列表 =====
+    async function loadModels() {
+      try {
+        const res = await fetch('/api/models');
+        const data = await res.json();
+        const sel = $('modelKey');
+        sel.innerHTML = '<option value="auto">自动选择模型</option>';
+        for (const [key, cfg] of Object.entries(data.configs || {})) {
+          const opt = document.createElement('option');
+          opt.value = key;
+          opt.textContent = `${cfg.name} (${key})`;
+          sel.appendChild(opt);
+        }
+        sel.value = data.default || 'auto';
+        const gpu = data.gpu || {};
+        $('gpuInfo').textContent = `${gpu.device?.toUpperCase()||'CPU'} ${gpu.gpu_name||''} · VRAM ${gpu.vram_gb||'?'} GB`;
+      } catch (e) {
+        $('gpuInfo').textContent = 'GPU 检测失败';
+      }
+    }
+
+    // ===== 播放器控制 =====
+    const audio = $('audio');
+    const playBtn = $('playBtn');
+    const iconPlay = $('iconPlay');
+    const iconPause = $('iconPause');
+    const progressTrack = $('progressTrack');
+    const progressFill = $('progressFill');
+    const progressHover = $('progressHover');
+
+    function togglePlay() {
+      if (!audio.src) return;
+      if (audio.paused) audio.play();
+      else audio.pause();
+    }
+    playBtn.addEventListener('click', togglePlay);
+
+    audio.addEventListener('play', () => { iconPlay.style.display='none'; iconPause.style.display='block'; isPlaying=true; });
+    audio.addEventListener('pause', () => { iconPlay.style.display='block'; iconPause.style.display='none'; isPlaying=false; });
+    audio.addEventListener('timeupdate', () => {
+      $('currentTime').textContent = fmtTime(audio.currentTime);
+      if (audio.duration) {
+        progressFill.style.width = (audio.currentTime / audio.duration * 100) + '%';
+      }
+      highlightActiveSegment(audio.currentTime);
+    });
+    audio.addEventListener('loadedmetadata', () => {
+      $('totalTime').textContent = fmtTime(audio.duration);
+    });
+    audio.addEventListener('ended', () => {
+      iconPlay.style.display='block'; iconPause.style.display='none'; isPlaying=false;
+    });
+
+    // 进度条点击/悬停
+    progressTrack.addEventListener('click', (e) => {
+      if (!audio.duration) return;
+      const rect = progressTrack.getBoundingClientRect();
+      const ratio = (e.clientX - rect.left) / rect.width;
+      audio.currentTime = ratio * audio.duration;
+    });
+    progressTrack.addEventListener('mousemove', (e) => {
+      if (!audio.duration) return;
+      const rect = progressTrack.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      progressHover.textContent = fmtTime(ratio * audio.duration);
+      progressHover.style.left = (ratio * 100) + '%';
+    });
+
+    // 高亮当前句子
+    function highlightActiveSegment(time) {
+      const segs = document.querySelectorAll('.segment');
+      let activeIdx = -1;
+      for (let i = 0; i < currentSegments.length; i++) {
+        if (time >= currentSegments[i].start && time <= currentSegments[i].end) {
+          activeIdx = i;
+          break;
+        }
+      }
+      segs.forEach((el, i) => {
+        el.classList.toggle('active', i === activeIdx);
+      });
+      if (activeIdx !== -1) {
+        segs[activeIdx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    // 点击句子跳转
+    function jumpToSegment(idx) {
+      const seg = currentSegments[idx];
+      if (!seg) return;
+      audio.currentTime = seg.start;
+      if (audio.paused) audio.play();
+    }
+
+    // ===== 渲染结果 =====
+    function renderResult(data) {
+      currentSegments = data.segments || [];
+      const hasTrans = data.translate_enabled && currentSegments[0]?.translated_text !== undefined;
+      const showSpeaker = data.diarize_enabled || currentSegments.some(s => s.speaker);
+
+      // 清空并显示
+      $('emptyState').style.display = 'none';
+      const timeline = $('timeline');
+      timeline.style.display = 'flex';
+      timeline.innerHTML = '';
+
+      currentSegments.forEach((seg, idx) => {
+        const el = document.createElement('div');
+        el.className = 'segment';
+        el.dataset.index = idx;
+
+        const speaker = seg.speaker || 'SPEAKER';
+        const spkColor = showSpeaker ? getSpeakerColor(speaker) : '#9ca3af';
+        const spkLabel = speaker.replace('SPEAKER_', 'S');
+
+        const speakerHtml = showSpeaker ? `
+          <div class="segment-speaker">
+            <span class="speaker-avatar" style="background:${spkColor}">${spkLabel}</span>
+            <span class="speaker-name" style="color:${spkColor}">${speaker}</span>
+          </div>
+        ` : '';
+
+        const transHtml = hasTrans ? `
+          <div class="segment-trans">${seg.translated_text || ''}</div>
+        ` : '';
+
+        el.innerHTML = `
+          <div class="segment-time">${fmtTimeFull(seg.start)}</div>
+          <div class="segment-body">
+            ${speakerHtml}
+            <div class="segment-text">${seg.text}</div>
+            ${transHtml}
+          </div>
+        `;
+
+        el.addEventListener('click', () => jumpToSegment(idx));
+        timeline.appendChild(el);
+      });
+
+      // 显示全文
+      $('fullText')?.remove();
+      const fullPre = document.createElement('pre');
+      fullPre.id = 'fullText';
+      fullPre.style.display = 'none';
+      fullPre.textContent = data.text || '';
+      document.body.appendChild(fullPre);
+
+      // 启用导出
+      $('exportSection').style.opacity = '1';
+      $('exportSection').style.pointerEvents = 'auto';
+
+      // 显示播放器
+      $('playerBar').style.display = 'flex';
+      $('playerTitle').textContent = currentFile?.name || '在线音频';
+
+      const transInfo = data.translate_enabled ? `，翻译 ${data.translation_time ?? '-'}s` : '';
+      showToast(`转录完成 · ${data.model} · ${data.compute_type} · ${data.device} · 耗时 ${data.elapsed_time ?? '-'}s${transInfo}`, 'success');
+    }
+
+    // ===== 导出功能 =====
+    $('btnCopy').addEventListener('click', () => {
+      const text = currentSegments.map(s => s.text).join('\n');
+      navigator.clipboard.writeText(text).then(() => showToast('已复制到剪贴板', 'success'));
+    });
+    $('btnTxt').addEventListener('click', () => {
+      const text = currentSegments.map(s => `[${fmtTimeFull(s.start)}] ${s.speaker ? s.speaker+': ' : ''}${s.text}`).join('\n');
+      const blob = new Blob([text], {type:'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'transcript.txt'; a.click();
+      URL.revokeObjectURL(url);
+    });
+    $('btnSrt').addEventListener('click', () => {
+      const srt = currentSegments.map((s, i) => {
+        const start = fmtTimeFull(s.start).replace('.', ',');
+        const end = fmtTimeFull(s.end).replace('.', ',');
+        return `${i+1}\n${start} --> ${end}\n${s.text}\n`;
+      }).join('\n');
+      const blob = new Blob([srt], {type:'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'transcript.srt'; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // ===== 提交转录 =====
+    $('submitBtn').addEventListener('click', async () => {
+      const fileInput = $('audioFile');
+      const audioUrl = $('audioUrl').value.trim();
+      if (!fileInput.files.length && !audioUrl) {
+        showToast('请先选择音频文件或填写音频链接', 'error');
+        return;
+      }
+
+      const btn = $('submitBtn');
+      const btnText = $('btnText');
+      btn.disabled = true;
+      btnText.innerHTML = '<span class="spinner"></span> 处理中…';
+
+      // 设置音频源
+      if (fileInput.files.length) {
+        currentFile = fileInput.files[0];
+        const url = URL.createObjectURL(currentFile);
+        audio.src = url;
+        $('playerTitle').textContent = currentFile.name;
+      } else {
+        currentFile = { name: audioUrl.split('/').pop() || '在线音频' };
+        audio.src = audioUrl;
+        $('playerTitle').textContent = currentFile.name;
+      }
+      $('playerBar').style.display = 'flex';
+
+      const form = new FormData();
+      if (fileInput.files.length) {
+        form.append('file', fileInput.files[0]);
+      } else {
+        form.append('audio_url', audioUrl);
+      }
+      form.append('model_key', $('modelKey').value);
+      form.append('language', $('language').value);
+      form.append('translate', $('translate').checked);
+      form.append('diarize', $('diarize').checked);
+      form.append('hf_token', '');
+
+      try {
+        const res = await fetch('/api/transcribe', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.detail || data.error || '转录失败');
+        renderResult(data);
+      } catch (e) {
+        showToast('错误：' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = '开始转录';
+      }
+    });
+
+    // 初始化
+    loadModels();
+  </script>
+</body>
+</html>
